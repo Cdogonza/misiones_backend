@@ -65,3 +65,35 @@ CREATE TABLE IF NOT EXISTS componentes (
     ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Pedidos de componentes
+CREATE TABLE IF NOT EXISTS pedidos (
+  idpedido    INT          NOT NULL AUTO_INCREMENT,
+  idusuario   INT          NOT NULL,
+  estado      ENUM('pendiente','aprobado','rechazado','entregado')
+                           NOT NULL DEFAULT 'pendiente',
+  created_at  DATETIME     NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (idpedido),
+  KEY idx_pedidos_idusuario (idusuario),
+  CONSTRAINT fk_pedidos_usuarios
+    FOREIGN KEY (idusuario) REFERENCES usuarios (idusuario)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS pedidos_detalle (
+  iddetalle         INT NOT NULL AUTO_INCREMENT,
+  idpedido          INT NOT NULL,
+  codigo_componente INT NOT NULL,
+  cantidad          INT NOT NULL,
+  PRIMARY KEY (iddetalle),
+  KEY idx_pdet_idpedido (idpedido),
+  KEY idx_pdet_codigo_componente (codigo_componente),
+  CONSTRAINT fk_pdet_pedidos
+    FOREIGN KEY (idpedido) REFERENCES pedidos (idpedido)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  CONSTRAINT fk_pdet_componentes
+    FOREIGN KEY (codigo_componente) REFERENCES componentes (codigo_componente)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

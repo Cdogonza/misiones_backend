@@ -553,3 +553,29 @@ Cuando implementemos nuevas acciones que modifiquen la BD, se registrará un nue
 
 Tip: para el resto de cambios a la base de datos, usaremos el helper `writeHistorial()` en `src/db/historialRepo.ts`.
 
+<!-- CREATE TABLE IF NOT EXISTS misiones.pedidos_detalle (
+  idpedido_detalle INT NOT NULL AUTO_INCREMENT,
+  idpedido INT NOT NULL,
+  codigo_componente INT NOT NULL,
+  cantidad INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (idpedido_detalle),
+  KEY idx_detalle_pedido (idpedido),
+  KEY idx_detalle_componente (codigo_componente),
+  CONSTRAINT fk_detalle_pedido
+    FOREIGN KEY (idpedido) REFERENCES pedidos (idpedido)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_detalle_componente
+    FOREIGN KEY (codigo_componente) REFERENCES componentes (codigo_componente)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4; -->
+<!-- CREATE TABLE IF NOT EXISTS pedidos (
+  idpedido INT NOT NULL AUTO_INCREMENT,
+  idusuario INT NOT NULL,
+  estado ENUM('pendiente', 'aprobado', 'rechazado', 'entregado') NOT NULL DEFAULT 'pendiente',
+  fecha_pedido DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+  observaciones TEXT NULL,
+  PRIMARY KEY (idpedido),
+  KEY idx_pedidos_idusuario (idusuario),
+  CONSTRAINT fk_pedidos_usuarios
+    FOREIGN KEY (idusuario) REFERENCES usuarios (idusuario)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4; -->
