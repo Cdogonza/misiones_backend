@@ -4,7 +4,7 @@ import { pool } from './pool';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type EstadoPedido = 'pendiente' | 'aprobado' | 'rechazado' | 'entregado';
+export type EstadoPedido = 'pendiente' | 'aprobado' | 'rechazado' | 'entregado' | 'devuelto';
 
 export type PedidoDetalleInput = {
   codigo_componente: number;
@@ -15,15 +15,20 @@ export type PedidoRow = {
   idpedido: number;
   idusuario: number;
   estado: EstadoPedido;
-  created_at: Date;
+  fecha_pedido: Date;
+  codigo_unidad_destino?: number | null;
+  fecha_inicio?: Date | null;
+  fecha_fin?: Date | null;
+  observaciones?: string | null;
   // joined fields
   usuario?: string;
   correo?: string;
   oficina?: string;
+  unidad_destino_nombre?: string;
 };
 
 export type PedidoDetalleRow = {
-  iddetalle: number;
+  idpedido_detalle: number;
   idpedido: number;
   codigo_componente: number;
   cantidad: number;
@@ -44,6 +49,12 @@ export type PedidoConDetalle = PedidoRow & {
 export async function createPedido(
   idusuario: number,
   items: PedidoDetalleInput[],
+  config: {
+    codigo_unidad_destino?: number | null;
+    fecha_inicio?: string | null;
+    fecha_fin?: string | null;
+    observaciones?: string | null;
+  } = {}
 ): Promise<number> {
   const conn: PoolConnection = await pool.getConnection();
   try {
@@ -51,8 +62,15 @@ export async function createPedido(
 
     // 1) Cabecera
     const [headerResult] = await conn.execute<ResultSetHeader>(
-      `INSERT INTO pedidos (idusuario, estado) VALUES (?, 'pendiente')`,
-      [idusuario],
+      `INSERT INTO pedidos (idusuario, estado, codigo_unidad_destino, fecha_inicio, fecha_fin, observaciones) 
+       VALUES (?, 'pendiente', ?, ?, ?, ?)`,
+      [
+        idusuario,
+        config.codigo_unidad_destino ?? null,
+        config.fecha_inicio ?? null,
+        config.fecha_fin ?? null,
+        config.observaciones ?? null
+      ],
     );
     const idpedido = headerResult.insertId;
 
@@ -79,11 +97,14 @@ export async function createPedido(
  */
 export async function listAllPedidos(): Promise<PedidoRow[]> {
   const [rows] = await pool.execute(
-    `SELECT p.idpedido, p.idusuario, p.estado, p.created_at,
-            u.usuario, u.correo, u.oficina
+    `SELECT p.idpedido, p.idusuario, p.estado, p.fecha_pedido,
+            p.codigo_unidad_destino, p.fecha_inicio, p.fecha_fin, p.observaciones,
+            u.usuario, u.correo, u.oficina,
+            un.nombre_de_la_unidad as unidad_destino_nombre
      FROM pedidos p
      JOIN usuarios u ON p.idusuario = u.idusuario
-     ORDER BY p.created_at DESC`,
+     LEFT JOIN unidades un ON p.codigo_unidad_destino = un.codigo_unidad
+     ORDER BY p.fecha_pedido DESC`,
   );
   return rows as PedidoRow[];
 }
@@ -93,12 +114,15 @@ export async function listAllPedidos(): Promise<PedidoRow[]> {
  */
 export async function listPedidosByUsuario(idusuario: number): Promise<PedidoRow[]> {
   const [rows] = await pool.execute(
-    `SELECT p.idpedido, p.idusuario, p.estado, p.created_at,
-            u.usuario, u.correo, u.oficina
+    `SELECT p.idpedido, p.idusuario, p.estado, p.fecha_pedido,
+            p.codigo_unidad_destino, p.fecha_inicio, p.fecha_fin, p.observaciones,
+            u.usuario, u.correo, u.oficina,
+            un.nombre_de_la_unidad as unidad_destino_nombre
      FROM pedidos p
      JOIN usuarios u ON p.idusuario = u.idusuario
+     LEFT JOIN unidades un ON p.codigo_unidad_destino = un.codigo_unidad
      WHERE p.idusuario = ?
-     ORDER BY p.created_at DESC`,
+     ORDER BY p.fecha_pedido DESC`,
     [idusuario],
   );
   return rows as PedidoRow[];
@@ -109,7 +133,7 @@ export async function listPedidosByUsuario(idusuario: number): Promise<PedidoRow
  */
 export async function getDetallePedido(idpedido: number): Promise<PedidoDetalleRow[]> {
   const [rows] = await pool.execute(
-    `SELECT pd.iddetalle, pd.idpedido, pd.codigo_componente, pd.cantidad,
+    `SELECT pd.idpedido_detalle, pd.idpedido, pd.codigo_componente, pd.cantidad,
             c.componente
      FROM pedidos_detalle pd
      JOIN componentes c ON pd.codigo_componente = c.codigo_componente
@@ -124,10 +148,13 @@ export async function getDetallePedido(idpedido: number): Promise<PedidoDetalleR
  */
 export async function getPedidoById(idpedido: number): Promise<PedidoRow | null> {
   const [rows] = await pool.execute(
-    `SELECT p.idpedido, p.idusuario, p.estado, p.created_at,
-            u.usuario, u.correo, u.oficina
+    `SELECT p.idpedido, p.idusuario, p.estado, p.fecha_pedido,
+            p.codigo_unidad_destino, p.fecha_inicio, p.fecha_fin, p.observaciones,
+            u.usuario, u.correo, u.oficina,
+            un.nombre_de_la_unidad as unidad_destino_nombre
      FROM pedidos p
      JOIN usuarios u ON p.idusuario = u.idusuario
+     LEFT JOIN unidades un ON p.codigo_unidad_destino = un.codigo_unidad
      WHERE p.idpedido = ?
      LIMIT 1`,
     [idpedido],

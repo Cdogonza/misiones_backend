@@ -16,7 +16,7 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const ESTADOS_VALIDOS: EstadoPedido[] = ['pendiente', 'aprobado', 'rechazado', 'entregado'];
+const ESTADOS_VALIDOS: EstadoPedido[] = ['pendiente', 'aprobado', 'rechazado', 'entregado', 'devuelto'];
 
 function toPositiveInt(value: unknown, field: string): number {
   const parsed = Number(value);
@@ -36,7 +36,13 @@ export const postPedido = asyncHandler(async (req: Request, res: Response) => {
     throw new HttpError(401, 'Usuario no autenticado');
   }
 
-  const body = req.body as { items?: unknown };
+  const body = req.body as { 
+    items?: unknown, 
+    codigo_unidad_destino?: number, 
+    fecha_inicio?: string, 
+    fecha_fin?: string, 
+    observaciones?: string 
+  };
 
   if (!Array.isArray(body.items) || body.items.length === 0) {
     throw new HttpError(400, 'El campo "items" debe ser un array no vacío');
@@ -54,7 +60,12 @@ export const postPedido = asyncHandler(async (req: Request, res: Response) => {
     };
   });
 
-  const idpedido = await createPedido(idusuario, items);
+  const idpedido = await createPedido(idusuario, items, {
+    codigo_unidad_destino: body.codigo_unidad_destino ? Number(body.codigo_unidad_destino) : null,
+    fecha_inicio: body.fecha_inicio || null,
+    fecha_fin: body.fecha_fin || null,
+    observaciones: body.observaciones || null
+  });
 
   await writeHistorial({
     usuario: req.user?.usuario ?? null,
@@ -62,7 +73,15 @@ export const postPedido = asyncHandler(async (req: Request, res: Response) => {
     evento: `creó pedido ${idpedido} (${items.length} ítem/s)`,
   });
 
-  return res.status(201).json({ idpedido, idusuario, estado: 'pendiente', items });
+  return res.status(201).json({ 
+    idpedido, 
+    idusuario, 
+    estado: 'pendiente', 
+    items,
+    codigo_unidad_destino: body.codigo_unidad_destino,
+    fecha_inicio: body.fecha_inicio,
+    fecha_fin: body.fecha_fin
+  });
 });
 
 // ─── GET /api/pedidos ─────────────────────────────────────────────────────────
