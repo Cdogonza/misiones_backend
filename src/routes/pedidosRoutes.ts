@@ -4,6 +4,7 @@ import {
   getAllPedidos,
   getPedidosByUsuario,
   patchEstadoPedido,
+  patchPedido,
   postPedido,
 } from '../controllers/pedidosController';
 import { requireAuth } from '../middlewares/authMiddleware';
@@ -21,6 +22,9 @@ pedidosRouter.get('/', getAllPedidos);
 
 // GET /api/pedidos/usuario/:id — historial de pedidos de un usuario
 pedidosRouter.get('/usuario/:id', getPedidosByUsuario);
+
+// PATCH /api/pedidos/:id — actualizar configuración del pedido
+pedidosRouter.patch('/:id', patchPedido);
 
 // PATCH /api/pedidos/:id/estado — actualizar estado (solo admin/superAdmin)
 pedidosRouter.patch('/:id/estado', patchEstadoPedido);

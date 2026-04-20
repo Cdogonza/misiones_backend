@@ -10,6 +10,7 @@ import {
   listAllPedidos,
   listPedidosByUsuario,
   updateEstadoPedido,
+  updatePedido,
   type EstadoPedido,
   type PedidoDetalleInput,
 } from '../db/pedidosRepo';
@@ -169,4 +170,58 @@ export const patchEstadoPedido = asyncHandler(async (req: Request, res: Response
   });
 
   return res.json({ idpedido, estado: nuevoEstado });
+});
+
+// ─── PATCH /api/pedidos/:id ──────────────────────────────────────────────────
+
+export const patchPedido = asyncHandler(async (req: Request, res: Response) => {
+  const idpedido = toPositiveInt(req.params.id, 'id');
+
+  const body = req.body as {
+    codigo_unidad_destino?: number;
+    fecha_inicio?: string;
+    fecha_fin?: string;
+    observaciones?: string;
+    items?: { codigo_componente: number; cantidad: number }[];
+  };
+
+  const pedido = await getPedidoById(idpedido);
+  if (!pedido) {
+    throw new HttpError(404, 'Pedido no encontrado');
+  }
+
+  // Solo se puede editar si está pendiente
+  if (pedido.estado !== 'pendiente') {
+    throw new HttpError(400, 'Solo se pueden editar pedidos en estado pendiente');
+  }
+
+  // Permisos: Solo el dueño del pedido o un admin/superAdmin puede editar
+  const currentUser = req.user;
+  if (
+    currentUser?.idusuario !== pedido.idusuario &&
+    currentUser?.rol !== 'admin' &&
+    currentUser?.rol !== 'superAdmin'
+  ) {
+    throw new HttpError(403, 'No tienes permiso para editar este pedido');
+  }
+
+  const result = await updatePedido(idpedido, {
+    codigo_unidad_destino: body.codigo_unidad_destino,
+    fecha_inicio: body.fecha_inicio,
+    fecha_fin: body.fecha_fin,
+    observaciones: body.observaciones,
+    items: body.items
+  });
+
+  if (!result) {
+    throw new HttpError(500, 'Error al actualizar el pedido');
+  }
+
+  await writeHistorial({
+    usuario: req.user?.usuario ?? null,
+    email: null,
+    evento: `editó configuración del pedido ${idpedido}`,
+  });
+
+  return res.json({ message: 'Pedido actualizado con éxito', idpedido });
 });

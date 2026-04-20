@@ -34,6 +34,7 @@ export type PedidoDetalleRow = {
   cantidad: number;
   // optional joined field
   componente?: string;
+  serie?: string;
 };
 
 export type PedidoConDetalle = PedidoRow & {
@@ -79,6 +80,11 @@ export async function createPedido(
       await conn.execute<ResultSetHeader>(
         `INSERT INTO pedidos_detalle (idpedido, codigo_componente, cantidad) VALUES (?, ?, ?)`,
         [idpedido, item.codigo_componente, item.cantidad],
+      );
+      // RESTAR stock del componente
+      await conn.execute<ResultSetHeader>(
+        `UPDATE componentes SET total = total - ? WHERE codigo_componente = ?`,
+        [item.cantidad, item.codigo_componente]
       );
     }
 
@@ -134,7 +140,7 @@ export async function listPedidosByUsuario(idusuario: number): Promise<PedidoRow
 export async function getDetallePedido(idpedido: number): Promise<PedidoDetalleRow[]> {
   const [rows] = await pool.execute(
     `SELECT pd.idpedido_detalle, pd.idpedido, pd.codigo_componente, pd.cantidad,
-            c.componente
+            c.componente, c.serie
      FROM pedidos_detalle pd
      JOIN componentes c ON pd.codigo_componente = c.codigo_componente
      WHERE pd.idpedido = ?`,
@@ -163,15 +169,139 @@ export async function getPedidoById(idpedido: number): Promise<PedidoRow | null>
 }
 
 /**
- * Actualiza el estado de un pedido. Retorna true si se modificó alguna fila.
+ * Actualiza el estado de un pedido y gestiona el stock dinámicamente.
  */
 export async function updateEstadoPedido(
   idpedido: number,
-  estado: EstadoPedido,
+  nuevoEstado: EstadoPedido,
 ): Promise<boolean> {
-  const [result] = await pool.execute<ResultSetHeader>(
-    `UPDATE pedidos SET estado = ? WHERE idpedido = ?`,
-    [estado, idpedido],
-  );
-  return result.affectedRows > 0;
+  const conn: PoolConnection = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // 1) Obtener estado actual
+    const [rows] = await conn.execute(
+      `SELECT estado FROM pedidos WHERE idpedido = ?`,
+      [idpedido]
+    );
+    const pedido = (rows as any[])[0];
+    if (!pedido) {
+      await conn.rollback();
+      return false;
+    }
+    const viejoEstado = pedido.estado as EstadoPedido;
+
+    // 2) Si el estado no cambia, no hacemos nada
+    if (viejoEstado === nuevoEstado) {
+      await conn.commit();
+      return true;
+    }
+
+    // 3) Lógica de stock
+    // Definimos qué estados se consideran "stock fuera del depósito" y cuáles "stock devuelto/no usado"
+    const esStockFuera = (e: EstadoPedido) => ['pendiente', 'aprobado', 'entregado'].includes(e);
+    const esStockDevuelto = (e: EstadoPedido) => ['devuelto', 'rechazado'].includes(e);
+
+    const debeRestaurar = esStockFuera(viejoEstado) && esStockDevuelto(nuevoEstado);
+    const debeRestar = esStockDevuelto(viejoEstado) && esStockFuera(nuevoEstado);
+
+    if (debeRestaurar || debeRestar) {
+      const [itemRows] = await conn.execute(
+        `SELECT codigo_componente, cantidad FROM pedidos_detalle WHERE idpedido = ?`,
+        [idpedido]
+      );
+      const items = itemRows as { codigo_componente: number; cantidad: number }[];
+
+      for (const item of items) {
+        const factor = debeRestaurar ? 1 : -1; // +1 para devolver, -1 para restar de nuevo
+        await conn.execute(
+          `UPDATE componentes SET total = total + ? WHERE codigo_componente = ?`,
+          [item.cantidad * factor, item.codigo_componente]
+        );
+      }
+    }
+
+    // 4) Actualizar el pedido
+    const [result] = await conn.execute<ResultSetHeader>(
+      `UPDATE pedidos SET estado = ? WHERE idpedido = ?`,
+      [nuevoEstado, idpedido],
+    );
+
+    await conn.commit();
+    return result.affectedRows > 0;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Actualiza la configuración de un pedido (unidad, fechas, obs) y sus ítems.
+ * Maneja la restauración y resta de stock dinámicamente.
+ */
+export async function updatePedido(
+  idpedido: number,
+  config: {
+    codigo_unidad_destino?: number | null;
+    fecha_inicio?: string | null;
+    fecha_fin?: string | null;
+    observaciones?: string | null;
+    items?: { codigo_componente: number; cantidad: number }[];
+  }
+): Promise<boolean> {
+  const conn: PoolConnection = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // 1. Restaurar stock de los items antiguos antes de borrarlos
+    const [oldItems] = await conn.execute(
+      'SELECT codigo_componente, cantidad FROM pedidos_detalle WHERE idpedido = ?',
+      [idpedido]
+    );
+    for (const item of (oldItems as any[])) {
+      await conn.execute(
+        'UPDATE componentes SET total = total + ? WHERE codigo_componente = ?',
+        [item.cantidad, item.codigo_componente]
+      );
+    }
+
+    // 2. Eliminar detalles antiguos
+    await conn.execute('DELETE FROM pedidos_detalle WHERE idpedido = ?', [idpedido]);
+
+    // 3. Insertar nuevos detalles y restar stock
+    if (config.items) {
+      for (const item of config.items) {
+        await conn.execute(
+          'INSERT INTO pedidos_detalle (idpedido, codigo_componente, cantidad) VALUES (?, ?, ?)',
+          [idpedido, item.codigo_componente, item.cantidad]
+        );
+        await conn.execute(
+          'UPDATE componentes SET total = total - ? WHERE codigo_componente = ?',
+          [item.cantidad, item.codigo_componente]
+        );
+      }
+    }
+
+    // 4. Actualizar cabecera
+    await conn.execute(
+      `UPDATE pedidos SET codigo_unidad_destino = ?, fecha_inicio = ?, fecha_fin = ?, observaciones = ? WHERE idpedido = ?`,
+      [
+        config.codigo_unidad_destino ?? null,
+        config.fecha_inicio ?? null,
+        config.fecha_fin ?? null,
+        config.observaciones ?? null,
+        idpedido
+      ]
+    );
+
+    await conn.commit();
+    return true;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
