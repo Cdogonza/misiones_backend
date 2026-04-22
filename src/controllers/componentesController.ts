@@ -25,6 +25,14 @@ function toPositiveInt(value: unknown, field: string): number {
   return parsed;
 }
 
+function toNonNegativeInt(value: unknown, field: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new HttpError(400, `${field} debe ser un entero no negativo`);
+  }
+  return parsed;
+}
+
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new HttpError(400, `Campo inválido: ${field}`);
@@ -46,6 +54,11 @@ function optionalNumber(value: unknown, field: string): number | null {
   return parsed;
 }
 
+function optionalNonNegativeInt(value: unknown, field: string): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  return toNonNegativeInt(value, field);
+}
+
 function resolveCodigoComponente(req: Request): number {
   const fromParams = req.params.codigo_componente;
   if (fromParams !== undefined) return toPositiveInt(fromParams, 'codigo_componente');
@@ -65,7 +78,7 @@ function parseBody(body: Record<string, unknown>): ComponenteInput {
     codigo_equipo: toPositiveInt(body.codigo_equipo, 'codigo_equipo'),
     componente: requiredString(body.componente, 'componente'),
     serie: optionalString(body.serie),
-    total: optionalNumber(body.total, 'total'),
+    total: optionalNonNegativeInt(body.total, 'total'),
     codigo_unidad: optionalNumber(body.codigo_unidad, 'codigo_unidad'),
     ubicacion: optionalString(body.ubicacion),
     estado: optionalString(body.estado),

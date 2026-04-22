@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS componentes (
   codigo_equipo INT NOT NULL,
   componente VARCHAR(255) NOT NULL,
   serie VARCHAR(255) NULL,
-  total DECIMAL(10,2) NULL,
+  total INT NULL,
   codigo_unidad INT NULL,
   ubicacion VARCHAR(255) NULL,
   estado VARCHAR(100) NULL,

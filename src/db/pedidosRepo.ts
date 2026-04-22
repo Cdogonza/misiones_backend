@@ -99,19 +99,43 @@ export async function createPedido(
 }
 
 /**
- * Lista todos los pedidos con datos del usuario (para admin).
+ * Lista todos los pedidos con datos del usuario (para admin),
+ * permitiendo filtrado opcional por idpedido o nombre de unidad de destino.
  */
-export async function listAllPedidos(): Promise<PedidoRow[]> {
-  const [rows] = await pool.execute(
-    `SELECT p.idpedido, p.idusuario, p.estado, p.fecha_pedido,
-            p.codigo_unidad_destino, p.fecha_inicio, p.fecha_fin, p.observaciones,
-            u.usuario, u.correo, u.oficina,
-            un.nombre_de_la_unidad as unidad_destino_nombre
-     FROM pedidos p
-     JOIN usuarios u ON p.idusuario = u.idusuario
-     LEFT JOIN unidades un ON p.codigo_unidad_destino = un.codigo_unidad
-     ORDER BY p.fecha_pedido DESC`,
-  );
+export async function listAllPedidos(filters?: { 
+  idpedido?: number; 
+  unidad_destino_nombre?: string 
+}): Promise<PedidoRow[]> {
+  let sql = `
+    SELECT p.idpedido, p.idusuario, p.estado, p.fecha_pedido,
+           p.codigo_unidad_destino, p.fecha_inicio, p.fecha_fin, p.observaciones,
+           u.usuario, u.correo, u.oficina,
+           un.nombre_de_la_unidad as unidad_destino_nombre
+    FROM pedidos p
+    JOIN usuarios u ON p.idusuario = u.idusuario
+    LEFT JOIN unidades un ON p.codigo_unidad_destino = un.codigo_unidad
+  `;
+
+  const whereClauses: string[] = [];
+  const params: any[] = [];
+
+  if (filters?.idpedido) {
+    whereClauses.push('p.idpedido = ?');
+    params.push(filters.idpedido);
+  }
+
+  if (filters?.unidad_destino_nombre) {
+    whereClauses.push('un.nombre_de_la_unidad LIKE ?');
+    params.push(`%${filters.unidad_destino_nombre}%`);
+  }
+
+  if (whereClauses.length > 0) {
+    sql += ' WHERE ' + whereClauses.join(' AND ');
+  }
+
+  sql += ' ORDER BY p.fecha_pedido DESC';
+
+  const [rows] = await pool.execute(sql, params);
   return rows as PedidoRow[];
 }
 

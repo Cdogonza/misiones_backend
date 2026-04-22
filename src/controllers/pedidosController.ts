@@ -93,7 +93,14 @@ export const getAllPedidos = asyncHandler(async (req: Request, res: Response) =>
     throw new HttpError(403, 'Solo los administradores pueden ver todos los pedidos');
   }
 
-  const pedidos = await listAllPedidos();
+  const { idpedido, unidad_destino_nombre } = req.query;
+
+  const filters = {
+    idpedido: idpedido ? Number(idpedido) : undefined,
+    unidad_destino_nombre: unidad_destino_nombre as string | undefined,
+  };
+
+  const pedidos = await listAllPedidos(filters);
 
   // Adjuntar detalle a cada pedido
   const pedidosConDetalle = await Promise.all(
