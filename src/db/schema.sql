@@ -97,3 +97,23 @@ CREATE TABLE IF NOT EXISTS pedidos_detalle (
     ON UPDATE CASCADE
     ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Tabla de mantenimiento
+CREATE TABLE IF NOT EXISTS mantenimiento (
+    id_mantenimiento INT AUTO_INCREMENT PRIMARY KEY,
+    fecha_entrada DATE,
+    equipo TEXT,
+    marca TEXT,
+    nro_serie VARCHAR(57),
+    procedencia VARCHAR(255),
+    entrega VARCHAR(255),
+    recibe VARCHAR(255),
+    tel_contacto BIGINT,
+    calidad VARCHAR(255),
+    ubicacion VARCHAR(255),
+    estado VARCHAR(255),
+    presupuesto VARCHAR(255),
+    desc_final TEXT,
+    tecnico VARCHAR(255),
+    fecha_final DATE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

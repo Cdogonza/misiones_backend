@@ -9,6 +9,7 @@ import { componentesRouter } from './routes/componentesRoutes';
 import { unidadesRouter } from './routes/unidadesRoutes';
 import { userRouter } from './routes/userRoutes';
 import { pedidosRouter } from './routes/pedidosRoutes';
+import { mantenimientoRouter } from './routes/mantenimientoRoutes';
 import { errorHandler } from './middlewares/errorHandler';
 
 import { env } from './config/env';
@@ -33,6 +34,7 @@ app.use('/api/componentes', componentesRouter);
 app.use('/api/unidades', unidadesRouter);
 app.use('/api/usuarios', userRouter);
 app.use('/api/pedidos', pedidosRouter);
+app.use('/api/mantenimiento', mantenimientoRouter);
 
 // 404
 app.use((_req, res) => {
