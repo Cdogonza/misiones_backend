@@ -3,6 +3,7 @@ import { pool } from './pool';
 
 export type MantenimientoRow = {
   id_mantenimiento: number;
+  id_boleta: string | null;
   fecha_entrada: string | null;
   equipo: string | null;
   marca: string | null;
@@ -68,11 +69,11 @@ export async function searchMantenimientos(filters: {
 export async function createMantenimiento(data: MantenimientoInput): Promise<number> {
   const [result] = await pool.execute<ResultSetHeader>(
     `INSERT INTO mantenimiento (
-      fecha_entrada, equipo, marca, nro_serie, procedencia, entrega, recibe, 
+      id_boleta, fecha_entrada, equipo, marca, nro_serie, procedencia, entrega, recibe, 
       tel_contacto, calidad, ubicacion, estado, presupuesto, desc_final, tecnico, fecha_final
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      data.fecha_entrada, data.equipo, data.marca, data.nro_serie, data.procedencia, 
+      data.id_boleta, data.fecha_entrada, data.equipo, data.marca, data.nro_serie, data.procedencia, 
       data.entrega, data.recibe, data.tel_contacto, data.calidad, data.ubicacion, 
       data.estado, data.presupuesto, data.desc_final, data.tecnico, data.fecha_final
     ]
@@ -83,12 +84,12 @@ export async function createMantenimiento(data: MantenimientoInput): Promise<num
 export async function updateMantenimiento(id: number, data: MantenimientoInput): Promise<boolean> {
   const [result] = await pool.execute<ResultSetHeader>(
     `UPDATE mantenimiento SET 
-      fecha_entrada = ?, equipo = ?, marca = ?, nro_serie = ?, procedencia = ?, 
+      id_boleta = ?, fecha_entrada = ?, equipo = ?, marca = ?, nro_serie = ?, procedencia = ?, 
       entrega = ?, recibe = ?, tel_contacto = ?, calidad = ?, ubicacion = ?, 
       estado = ?, presupuesto = ?, desc_final = ?, tecnico = ?, fecha_final = ?
     WHERE id_mantenimiento = ?`,
     [
-      data.fecha_entrada, data.equipo, data.marca, data.nro_serie, data.procedencia, 
+      data.id_boleta, data.fecha_entrada, data.equipo, data.marca, data.nro_serie, data.procedencia, 
       data.entrega, data.recibe, data.tel_contacto, data.calidad, data.ubicacion, 
       data.estado, data.presupuesto, data.desc_final, data.tecnico, data.fecha_final,
       id
