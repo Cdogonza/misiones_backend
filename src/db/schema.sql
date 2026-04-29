@@ -115,5 +115,15 @@ CREATE TABLE IF NOT EXISTS mantenimiento (
     presupuesto VARCHAR(255),
     desc_final TEXT,
     tecnico VARCHAR(255),
-    fecha_final DATE
+    fecha_final DATE,
+    id_boleta VARCHAR(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Tabla de repuestos
+CREATE TABLE IF NOT EXISTS repuestos (
+  idrepuestos INT NOT NULL AUTO_INCREMENT,
+  nombre VARCHAR(45) NULL,
+  descripcion VARCHAR(45) NULL,
+  costo DOUBLE NULL,
+  PRIMARY KEY (idrepuestos)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
