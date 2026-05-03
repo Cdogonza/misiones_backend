@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS mantenimiento (
     recibe VARCHAR(255),
     tel_contacto BIGINT,
     calidad VARCHAR(255),
+    desc_inicial TEXT,
     ubicacion VARCHAR(255),
     estado VARCHAR(255),
     presupuesto VARCHAR(255),

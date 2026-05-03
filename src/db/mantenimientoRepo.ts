@@ -13,6 +13,7 @@ export type MantenimientoRow = {
   recibe: string | null;
   tel_contacto: number | null;
   calidad: string | null;
+  desc_inicial: string | null;
   ubicacion: string | null;
   estado: string | null;
   presupuesto: string | null;
@@ -70,30 +71,27 @@ export async function createMantenimiento(data: MantenimientoInput): Promise<num
   const [result] = await pool.execute<ResultSetHeader>(
     `INSERT INTO mantenimiento (
       id_boleta, fecha_entrada, equipo, marca, nro_serie, procedencia, entrega, recibe, 
-      tel_contacto, calidad, ubicacion, estado, presupuesto, desc_final, tecnico, fecha_final
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      tel_contacto, calidad, desc_inicial, ubicacion, estado, presupuesto, desc_final, tecnico, fecha_final
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.id_boleta, data.fecha_entrada, data.equipo, data.marca, data.nro_serie, data.procedencia, 
-      data.entrega, data.recibe, data.tel_contacto, data.calidad, data.ubicacion, 
+      data.entrega, data.recibe, data.tel_contacto, data.calidad, data.desc_inicial, data.ubicacion, 
       data.estado, data.presupuesto, data.desc_final, data.tecnico, data.fecha_final
     ]
   );
   return result.insertId;
 }
 
-export async function updateMantenimiento(id: number, data: MantenimientoInput): Promise<boolean> {
+export async function updateMantenimiento(id: number, data: Partial<MantenimientoInput>): Promise<boolean> {
+  const fields = Object.keys(data).filter(key => (data as any)[key] !== undefined);
+  if (fields.length === 0) return false;
+
+  const setClause = fields.map(field => `${field} = ?`).join(', ');
+  const values = fields.map(field => (data as any)[field]);
+
   const [result] = await pool.execute<ResultSetHeader>(
-    `UPDATE mantenimiento SET 
-      id_boleta = ?, fecha_entrada = ?, equipo = ?, marca = ?, nro_serie = ?, procedencia = ?, 
-      entrega = ?, recibe = ?, tel_contacto = ?, calidad = ?, ubicacion = ?, 
-      estado = ?, presupuesto = ?, desc_final = ?, tecnico = ?, fecha_final = ?
-    WHERE id_mantenimiento = ?`,
-    [
-      data.id_boleta, data.fecha_entrada, data.equipo, data.marca, data.nro_serie, data.procedencia, 
-      data.entrega, data.recibe, data.tel_contacto, data.calidad, data.ubicacion, 
-      data.estado, data.presupuesto, data.desc_final, data.tecnico, data.fecha_final,
-      id
-    ]
+    `UPDATE mantenimiento SET ${setClause} WHERE id_mantenimiento = ?`,
+    [...values, id]
   );
   return result.affectedRows > 0;
 }
@@ -102,6 +100,14 @@ export async function deleteMantenimiento(id: number): Promise<boolean> {
   const [result] = await pool.execute<ResultSetHeader>(
     'DELETE FROM mantenimiento WHERE id_mantenimiento = ?',
     [id]
+  );
+  return result.affectedRows > 0;
+}
+
+export async function updateMantenimientoPresupuesto(id: number, tecnico: string, presupuesto: string): Promise<boolean> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    'UPDATE mantenimiento SET tecnico = ?, presupuesto = ? WHERE id_mantenimiento = ?',
+    [tecnico, presupuesto, id]
   );
   return result.affectedRows > 0;
 }
