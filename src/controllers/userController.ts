@@ -4,7 +4,7 @@ import { HttpError } from '../utils/httpError';
 import { asyncHandler } from '../utils/asyncHandler';
 import { hashPassword } from '../utils/password';
 import { writeHistorial } from '../db/historialRepo';
-import { findById, findByEmail, updateEmail, updatePassword, getAllUsers } from '../db/usersRepo';
+import { findById, findByEmail, updateEmail, updatePassword, getAllUsers, updateUserAdmin, deleteUser } from '../db/usersRepo';
 import { VALORES_OFICINAS } from '../utils/constants';
 
 function assertString(value: unknown, fieldName: string): string {
@@ -153,4 +153,71 @@ export const resetPasswordToDefault = asyncHandler(async (req: Request, res: Res
  */
 export const getOficinas = asyncHandler(async (_req: Request, res: Response) => {
     return res.json(VALORES_OFICINAS);
+});
+
+/**
+ * Actualiza los datos de un usuario (Solo SuperAdmin)
+ */
+export const updateUserHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = parseInt(id as string, 10);
+    if (isNaN(userId)) throw new HttpError(400, 'ID de usuario inválido');
+
+    const { email, rol, oficina } = req.body as { email?: string; rol?: string; oficina?: string };
+    
+    const validEmail = assertString(email, 'email');
+    const validRol = assertString(rol, 'rol') as 'integrante' | 'admin' | 'superAdmin';
+    const validOficina = assertString(oficina, 'oficina');
+
+    // Validar rol
+    if (!['integrante', 'admin', 'superAdmin'].includes(validRol)) {
+        throw new HttpError(400, 'Rol inválido');
+    }
+
+    // Verificar si el usuario existe
+    const user = await findById(userId);
+    if (!user) throw new HttpError(404, 'Usuario no encontrado');
+
+    // Verificar si el email ya existe en otro usuario
+    const existingUser = await findByEmail(validEmail);
+    if (existingUser && existingUser.idusuario !== userId) {
+        throw new HttpError(409, 'El correo electrónico ya está en uso');
+    }
+
+    await updateUserAdmin(userId, { correo: validEmail, rol: validRol, oficina: validOficina });
+
+    await writeHistorial({
+        usuario: req.user?.usuario || 'Desconocido',
+        email: req.user?.usuario || '', // Usamos el usuario del superadmin para el log
+        evento: `actualizó al usuario ${user.usuario} (ID: ${userId})`,
+    });
+
+    return res.json({ message: 'Usuario actualizado correctamente' });
+});
+
+/**
+ * Elimina un usuario permanentemente (Solo SuperAdmin)
+ */
+export const deleteUserHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = parseInt(id as string, 10);
+    if (isNaN(userId)) throw new HttpError(400, 'ID de usuario inválido');
+
+    const user = await findById(userId);
+    if (!user) throw new HttpError(404, 'Usuario no encontrado');
+
+    // Evitar que un superAdmin se borre a sí mismo (opcional pero recomendado)
+    if (req.user?.idusuario === userId) {
+        throw new HttpError(400, 'No puedes eliminar tu propia cuenta');
+    }
+
+    await deleteUser(userId);
+
+    await writeHistorial({
+        usuario: req.user?.usuario || 'Desconocido',
+        email: req.user?.usuario || '',
+        evento: `eliminó al usuario ${user.usuario} (ID: ${userId})`,
+    });
+
+    return res.json({ message: 'Usuario eliminado correctamente' });
 });

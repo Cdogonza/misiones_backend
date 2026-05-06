@@ -43,5 +43,5 @@ app.use((_req, res) => {
   res.status(404).json({ message: 'Ruta no encontrada' });
 });
 
-app.use(errorHandler);
 
+app.use(errorHandler);

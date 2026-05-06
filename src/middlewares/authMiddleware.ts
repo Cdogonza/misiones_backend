@@ -25,6 +25,13 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   }
 }
 
+export function requireSuperAdmin(req: Request, _res: Response, next: NextFunction) {
+  if (req.user?.rol !== 'superAdmin') {
+    return next(new HttpError(403, 'Acceso denegado: Se requiere rol de Super Administrador'));
+  }
+  next();
+}
+
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
 

@@ -89,7 +89,7 @@ export const postPedido = asyncHandler(async (req: Request, res: Response) => {
 
 export const getAllPedidos = asyncHandler(async (req: Request, res: Response) => {
   const rol = req.user?.rol;
-  if (rol !== 'admin' && rol !== 'superAdmin') {
+  if (rol !== 'admin' && rol !== 'superAdmin' && rol !== 'integrante') {
     throw new HttpError(403, 'Solo los administradores pueden ver todos los pedidos');
   }
 

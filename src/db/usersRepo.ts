@@ -93,3 +93,24 @@ export async function getAllUsers(oficina?: string): Promise<Pick<UsuarioRow, 'i
 
   return rows as Pick<UsuarioRow, 'idusuario' | 'usuario' | 'correo' | 'oficina' | 'rol'>[];
 }
+
+export async function updateUserAdmin(
+  idusuario: number,
+  params: { correo: string; oficina: string; rol: string }
+): Promise<boolean> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE usuarios 
+     SET correo = ?, oficina = ?, rol = ? 
+     WHERE idusuario = ?`,
+    [params.correo, params.oficina, params.rol, idusuario]
+  );
+  return result.affectedRows > 0;
+}
+
+export async function deleteUser(idusuario: number): Promise<boolean> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    'DELETE FROM usuarios WHERE idusuario = ?',
+    [idusuario]
+  );
+  return result.affectedRows > 0;
+}
