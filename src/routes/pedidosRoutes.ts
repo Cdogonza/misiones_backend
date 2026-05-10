@@ -6,7 +6,10 @@ import {
   patchEstadoPedido,
   patchPedido,
   postPedido,
+  deletePedidoHandler,
 } from '../controllers/pedidosController';
+
+
 import { requireAuth } from '../middlewares/authMiddleware';
 
 export const pedidosRouter = Router();
@@ -28,3 +31,7 @@ pedidosRouter.patch('/:id', patchPedido);
 
 // PATCH /api/pedidos/:id/estado — actualizar estado (solo admin/superAdmin)
 pedidosRouter.patch('/:id/estado', patchEstadoPedido);
+
+// DELETE /api/pedidos/:id — eliminar pedido
+pedidosRouter.delete('/:id', deletePedidoHandler);
+

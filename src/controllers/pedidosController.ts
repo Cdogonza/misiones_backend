@@ -11,13 +11,15 @@ import {
   listPedidosByUsuario,
   updateEstadoPedido,
   updatePedido,
+  deletePedido,
   type EstadoPedido,
   type PedidoDetalleInput,
 } from '../db/pedidosRepo';
 
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const ESTADOS_VALIDOS: EstadoPedido[] = ['pendiente', 'aprobado', 'rechazado', 'entregado', 'devuelto'];
+const ESTADOS_VALIDOS: EstadoPedido[] = ['pendiente', 'aprobado', 'rechazado', 'entregado', 'devuelto', 'borrador'];
 
 function toPositiveInt(value: unknown, field: string): number {
   const parsed = Number(value);
@@ -38,12 +40,14 @@ export const postPedido = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const body = req.body as { 
-    items?: unknown, 
-    codigo_unidad_destino?: number, 
+    items?: unknown[],
+    codigo_unidad_destino?: number,
     fecha_inicio?: string, 
     fecha_fin?: string, 
-    observaciones?: string 
+    observaciones?: string,
+    estado?: string
   };
+
 
   if (!Array.isArray(body.items) || body.items.length === 0) {
     throw new HttpError(400, 'El campo "items" debe ser un array no vacío');
@@ -65,7 +69,8 @@ export const postPedido = asyncHandler(async (req: Request, res: Response) => {
     codigo_unidad_destino: body.codigo_unidad_destino ? Number(body.codigo_unidad_destino) : null,
     fecha_inicio: body.fecha_inicio || null,
     fecha_fin: body.fecha_fin || null,
-    observaciones: body.observaciones || null
+    observaciones: body.observaciones || null,
+    estado: (body.estado as any) || 'pendiente'
   });
 
   await writeHistorial({
@@ -77,7 +82,7 @@ export const postPedido = asyncHandler(async (req: Request, res: Response) => {
   return res.status(201).json({ 
     idpedido, 
     idusuario, 
-    estado: 'pendiente', 
+    estado: (body.estado as any) || 'pendiente', 
     items,
     codigo_unidad_destino: body.codigo_unidad_destino,
     fecha_inicio: body.fecha_inicio,
@@ -90,7 +95,7 @@ export const postPedido = asyncHandler(async (req: Request, res: Response) => {
 export const getAllPedidos = asyncHandler(async (req: Request, res: Response) => {
   const rol = req.user?.rol;
   if (rol !== 'admin' && rol !== 'superAdmin' && rol !== 'integrante') {
-    throw new HttpError(403, 'Solo los administradores pueden ver todos los pedidos');
+    throw new HttpError(403, 'No tienes permiso para ver todos los pedidos');
   }
 
   const { idpedido, unidad_destino_nombre } = req.query;
@@ -189,6 +194,7 @@ export const patchPedido = asyncHandler(async (req: Request, res: Response) => {
     fecha_inicio?: string;
     fecha_fin?: string;
     observaciones?: string;
+    estado?: string;
     items?: { codigo_componente: number; cantidad: number }[];
   };
 
@@ -197,26 +203,37 @@ export const patchPedido = asyncHandler(async (req: Request, res: Response) => {
     throw new HttpError(404, 'Pedido no encontrado');
   }
 
-  // Solo se puede editar si está pendiente
-  if (pedido.estado !== 'pendiente') {
-    throw new HttpError(400, 'Solo se pueden editar pedidos en estado pendiente');
+  // Solo se puede editar si está pendiente o borrador
+  if (pedido.estado !== 'pendiente' && pedido.estado !== 'borrador') {
+    throw new HttpError(400, 'Solo se pueden editar pedidos en estado pendiente o borrador');
   }
 
   // Permisos: Solo el dueño del pedido o un admin/superAdmin puede editar
   const currentUser = req.user;
+  const isAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'superAdmin';
+
   if (
     currentUser?.idusuario !== pedido.idusuario &&
-    currentUser?.rol !== 'admin' &&
-    currentUser?.rol !== 'superAdmin'
+    !isAdmin
   ) {
     throw new HttpError(403, 'No tienes permiso para editar este pedido');
   }
+
+  // Si no es admin, no puede cambiar el estado a estados restringidos (aprobado, entregado, etc.)
+  if (body.estado && !isAdmin) {
+    const restrictedStates: EstadoPedido[] = ['aprobado', 'rechazado', 'entregado', 'devuelto'];
+    if (restrictedStates.includes(body.estado as any)) {
+      throw new HttpError(403, 'No tienes permiso para cambiar el pedido a este estado');
+    }
+  }
+
 
   const result = await updatePedido(idpedido, {
     codigo_unidad_destino: body.codigo_unidad_destino,
     fecha_inicio: body.fecha_inicio,
     fecha_fin: body.fecha_fin,
     observaciones: body.observaciones,
+    estado: (body.estado as any) || pedido.estado,
     items: body.items
   });
 
@@ -231,4 +248,39 @@ export const patchPedido = asyncHandler(async (req: Request, res: Response) => {
   });
 
   return res.json({ message: 'Pedido actualizado con éxito', idpedido });
+});
+
+// ─── DELETE /api/pedidos/:id ─────────────────────────────────────────────────
+
+export const deletePedidoHandler = asyncHandler(async (req: Request, res: Response) => {
+  const idpedido = toPositiveInt(req.params.id, 'id');
+
+  const pedido = await getPedidoById(idpedido);
+  if (!pedido) {
+    throw new HttpError(404, 'Pedido no encontrado');
+  }
+
+  // Permisos: Solo el dueño del pedido o un admin/superAdmin puede borrar
+  const currentUser = req.user;
+  const isAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'superAdmin';
+
+  if (
+    currentUser?.idusuario !== pedido.idusuario &&
+    !isAdmin
+  ) {
+    throw new HttpError(403, 'No tienes permiso para eliminar este pedido');
+  }
+
+  const success = await deletePedido(idpedido);
+  if (!success) {
+    throw new HttpError(500, 'Error al eliminar el pedido');
+  }
+
+  await writeHistorial({
+    usuario: req.user?.usuario ?? null,
+    email: null,
+    evento: `eliminó el pedido ${idpedido} (${pedido.estado})`,
+  });
+
+  return res.json({ message: 'Pedido eliminado con éxito', idpedido });
 });

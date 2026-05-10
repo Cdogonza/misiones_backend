@@ -4,7 +4,7 @@ import { pool } from './pool';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type EstadoPedido = 'pendiente' | 'aprobado' | 'rechazado' | 'entregado' | 'devuelto';
+export type EstadoPedido = 'pendiente' | 'aprobado' | 'rechazado' | 'entregado' | 'devuelto' | 'borrador';
 
 export type PedidoDetalleInput = {
   codigo_componente: number;
@@ -55,6 +55,7 @@ export async function createPedido(
     fecha_inicio?: string | null;
     fecha_fin?: string | null;
     observaciones?: string | null;
+    estado?: EstadoPedido;
   } = {}
 ): Promise<number> {
   const conn: PoolConnection = await pool.getConnection();
@@ -62,11 +63,13 @@ export async function createPedido(
     await conn.beginTransaction();
 
     // 1) Cabecera
+    const initialStatus = config.estado || 'pendiente';
     const [headerResult] = await conn.execute<ResultSetHeader>(
       `INSERT INTO pedidos (idusuario, estado, codigo_unidad_destino, fecha_inicio, fecha_fin, observaciones) 
-       VALUES (?, 'pendiente', ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [
         idusuario,
+        initialStatus,
         config.codigo_unidad_destino ?? null,
         config.fecha_inicio ?? null,
         config.fecha_fin ?? null,
@@ -81,11 +84,14 @@ export async function createPedido(
         `INSERT INTO pedidos_detalle (idpedido, codigo_componente, cantidad) VALUES (?, ?, ?)`,
         [idpedido, item.codigo_componente, item.cantidad],
       );
-      // RESTAR stock del componente
-      await conn.execute<ResultSetHeader>(
-        `UPDATE componentes SET total = total - ? WHERE codigo_componente = ?`,
-        [item.cantidad, item.codigo_componente]
-      );
+      
+      // RESTAR stock del componente SOLO si NO es borrador
+      if (initialStatus !== 'borrador') {
+        await conn.execute<ResultSetHeader>(
+          `UPDATE componentes SET total = total - ? WHERE codigo_componente = ?`,
+          [item.cantidad, item.codigo_componente]
+        );
+      }
     }
 
     await conn.commit();
@@ -224,7 +230,7 @@ export async function updateEstadoPedido(
     // 3) Lógica de stock
     // Definimos qué estados se consideran "stock fuera del depósito" y cuáles "stock devuelto/no usado"
     const esStockFuera = (e: EstadoPedido) => ['pendiente', 'aprobado', 'entregado'].includes(e);
-    const esStockDevuelto = (e: EstadoPedido) => ['devuelto', 'rechazado'].includes(e);
+    const esStockDevuelto = (e: EstadoPedido) => ['devuelto', 'rechazado', 'borrador'].includes(e);
 
     const debeRestaurar = esStockFuera(viejoEstado) && esStockDevuelto(nuevoEstado);
     const debeRestar = esStockDevuelto(viejoEstado) && esStockFuera(nuevoEstado);
@@ -272,6 +278,7 @@ export async function updatePedido(
     fecha_inicio?: string | null;
     fecha_fin?: string | null;
     observaciones?: string | null;
+    estado?: EstadoPedido;
     items?: { codigo_componente: number; cantidad: number }[];
   }
 ): Promise<boolean> {
@@ -279,46 +286,85 @@ export async function updatePedido(
   try {
     await conn.beginTransaction();
 
-    // 1. Restaurar stock de los items antiguos antes de borrarlos
-    const [oldItems] = await conn.execute(
-      'SELECT codigo_componente, cantidad FROM pedidos_detalle WHERE idpedido = ?',
+    // 1. Obtener estado actual
+    const [headerRows] = await conn.execute(
+      'SELECT estado FROM pedidos WHERE idpedido = ?',
       [idpedido]
     );
-    for (const item of (oldItems as any[])) {
-      await conn.execute(
-        'UPDATE componentes SET total = total + ? WHERE codigo_componente = ?',
-        [item.cantidad, item.codigo_componente]
-      );
-    }
+    const currentPedido = (headerRows as any[])[0];
+    const oldStatus = currentPedido?.estado as EstadoPedido;
+    const newStatus = config.estado || oldStatus;
 
-    // 2. Eliminar detalles antiguos
-    await conn.execute('DELETE FROM pedidos_detalle WHERE idpedido = ?', [idpedido]);
+    // 2 & 3 & 4. Solo actualizar items si se proporcionan
+    if (config.items !== undefined) {
+      // Restaurar stock de los items antiguos antes de borrarlos (solo si NO era borrador)
+      if (oldStatus !== 'borrador' && oldStatus !== 'rechazado' && oldStatus !== 'devuelto') {
+        const [oldItems] = await conn.execute(
+          'SELECT codigo_componente, cantidad FROM pedidos_detalle WHERE idpedido = ?',
+          [idpedido]
+        );
+        for (const item of (oldItems as any[])) {
+          await conn.execute(
+            'UPDATE componentes SET total = total + ? WHERE codigo_componente = ?',
+            [item.cantidad, item.codigo_componente]
+          );
+        }
+      }
 
-    // 3. Insertar nuevos detalles y restar stock
-    if (config.items) {
+      // Eliminar detalles antiguos
+      await conn.execute('DELETE FROM pedidos_detalle WHERE idpedido = ?', [idpedido]);
+
+      // Insertar nuevos detalles
       for (const item of config.items) {
         await conn.execute(
           'INSERT INTO pedidos_detalle (idpedido, codigo_componente, cantidad) VALUES (?, ?, ?)',
           [idpedido, item.codigo_componente, item.cantidad]
         );
-        await conn.execute(
-          'UPDATE componentes SET total = total - ? WHERE codigo_componente = ?',
-          [item.cantidad, item.codigo_componente]
-        );
+        
+        // Restar stock solo si el NUEVO estado descuenta stock
+        const esStatusFuera = (e: EstadoPedido) => ['pendiente', 'aprobado', 'entregado'].includes(e);
+        if (esStatusFuera(newStatus)) {
+          await conn.execute(
+            'UPDATE componentes SET total = total - ? WHERE codigo_componente = ?',
+            [item.cantidad, item.codigo_componente]
+          );
+        }
       }
     }
 
-    // 4. Actualizar cabecera
-    await conn.execute(
-      `UPDATE pedidos SET codigo_unidad_destino = ?, fecha_inicio = ?, fecha_fin = ?, observaciones = ? WHERE idpedido = ?`,
-      [
-        config.codigo_unidad_destino ?? null,
-        config.fecha_inicio ?? null,
-        config.fecha_fin ?? null,
-        config.observaciones ?? null,
-        idpedido
-      ]
-    );
+    // 5. Actualizar cabecera (solo campos definidos)
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (config.codigo_unidad_destino !== undefined) {
+      updates.push('codigo_unidad_destino = ?');
+      params.push(config.codigo_unidad_destino);
+    }
+    if (config.fecha_inicio !== undefined) {
+      updates.push('fecha_inicio = ?');
+      params.push(config.fecha_inicio);
+    }
+    if (config.fecha_fin !== undefined) {
+      updates.push('fecha_fin = ?');
+      params.push(config.fecha_fin);
+    }
+    if (config.observaciones !== undefined) {
+      updates.push('observaciones = ?');
+      params.push(config.observaciones);
+    }
+    if (config.estado !== undefined) {
+      updates.push('estado = ?');
+      params.push(config.estado);
+    }
+
+    if (updates.length > 0) {
+      params.push(idpedido);
+      await conn.execute(
+        `UPDATE pedidos SET ${updates.join(', ')} WHERE idpedido = ?`,
+        params
+      );
+    }
+
 
     await conn.commit();
     return true;
@@ -329,3 +375,57 @@ export async function updatePedido(
     conn.release();
   }
 }
+
+/**
+ * Elimina un pedido y restaura el stock si era un pedido activo.
+ */
+export async function deletePedido(idpedido: number): Promise<boolean> {
+  const conn: PoolConnection = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // 1) Obtener estado actual y items para restaurar stock
+    const [rows] = await conn.execute(
+      `SELECT estado FROM pedidos WHERE idpedido = ?`,
+      [idpedido]
+    );
+    const pedido = (rows as any[])[0];
+    if (!pedido) {
+      await conn.rollback();
+      return false;
+    }
+
+    const estado = pedido.estado as EstadoPedido;
+
+    // 2) Si NO es borrador, rechazado o devuelto, restaurar stock
+    const esStockFuera = (e: EstadoPedido) => ['pendiente', 'aprobado', 'entregado'].includes(e);
+    if (esStockFuera(estado)) {
+      const [itemRows] = await conn.execute(
+        `SELECT codigo_componente, cantidad FROM pedidos_detalle WHERE idpedido = ?`,
+        [idpedido]
+      );
+      for (const item of (itemRows as any[])) {
+        await conn.execute(
+          `UPDATE componentes SET total = total + ? WHERE codigo_componente = ?`,
+          [item.cantidad, item.codigo_componente]
+        );
+      }
+    }
+
+    // 3) Eliminar detalle y cabecera
+    await conn.execute(`DELETE FROM pedidos_detalle WHERE idpedido = ?`, [idpedido]);
+    const [result] = await conn.execute<ResultSetHeader>(
+      `DELETE FROM pedidos WHERE idpedido = ?`,
+      [idpedido]
+    );
+
+    await conn.commit();
+    return result.affectedRows > 0;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
